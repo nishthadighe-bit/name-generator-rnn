@@ -26,7 +26,7 @@ try:
     temperature = st.sidebar.slider("Creativity (Temperature):", min_value=0.1, max_value=1.5, value=0.7, step=0.1)
     num_names = st.sidebar.number_input("Count to Generate:", min_value=1, max_value=10, value=3)
 
-    # Manual Sigmoid and Tanh activations for GRU gating math
+    # Manual Activation functions
     def sigmoid(x): return 1 / (1 + np.exp(-np.clip(x, -50, 50)))
     def tanh(x): return np.tanh(x)
     def softmax(x):
@@ -36,25 +36,26 @@ try:
     # Pure NumPy Forward Pass through the GRU Network Architecture
     def predict_numpy(token_sequence):
         # 1. Embedding Layer Lookup
-        seq_embed = w['embed'][token_sequence] # Shape: (seq_len, embedding_dim)
+        seq_embed = w['embed'][token_sequence]
         
-        # 2. Manual GRU Step Processing Loop
-        h = np.zeros(128) # Initialize hidden state array vectors
-        W_z, W_r, W_h = np.split(w['gru_W'], 3, axis=1)
-        U_z, U_r, U_h = np.split(w['gru_U'], 3, axis=1)
-        b_z, b_r, b_h = np.split(w['gru_b'], 3, axis=0)
+        # 2. Extract and Split GRU weights cleanly
+        hidden_dim = 128
+        W_z, W_r, W_h = w['gru_W'][:, :hidden_dim], w['gru_W'][:, hidden_dim:hidden_dim*2], w['gru_W'][:, hidden_dim*2:]
+        U_z, U_r, U_h = w['gru_U'][:, :hidden_dim], w['gru_U'][:, hidden_dim:hidden_dim*2], w['gru_U'][:, hidden_dim*2:]
+        
+        # Handle the Keras double-bias packing vector safely
+        input_bias = w['gru_b'][0] if len(w['gru_b'].shape) > 1 else w['gru_b']
+        b_z, b_r, b_h = input_bias[:hidden_dim], input_bias[hidden_dim:hidden_dim*2], input_bias[hidden_dim*2:hidden_dim*3]
+        
+        h = np.zeros(hidden_dim) # Initialize hidden state
         
         for xt in seq_embed:
-            # Update gate calculation
             z = sigmoid(np.dot(xt, W_z) + np.dot(h, U_z) + b_z)
-            # Reset gate calculation
             r = sigmoid(np.dot(xt, W_r) + np.dot(h, U_r) + b_r)
-            # Candidate hidden state calculation
             h_tilde = tanh(np.dot(xt, W_h) + np.dot(r * h, U_h) + b_h)
-            # Compute new hidden state vector
             h = (1 - z) * h + z * h_tilde
             
-        # 3. Dense Softmax Output Layer Projection
+        # 3. Dense Softmax Output Output
         logits = np.dot(h, w['dense_W']) + w['dense_b']
         return softmax(logits)
 
@@ -72,7 +73,6 @@ try:
             for _ in range(num_names):
                 generated_name = seed_char
                 for _ in range(max_sequence_len):
-                    # Pad sequence manually
                     tokens = [char_to_idx[c] for c in generated_name]
                     if len(tokens) < max_sequence_len:
                         tokens = [0] * (max_sequence_len - len(tokens)) + tokens
@@ -87,4 +87,9 @@ try:
                     generated_name += next_char
                 st.success(f"💡 Generated Variant: **{generated_name.capitalize()}**")
 except Exception as err:
-    st.error(f"Missing Files: Please upload 'model_weights.pkl' and 'char_mappings.pkl' into GitHub. Error details: {err}")
+    st.error(f"Error executing math layers: {err}")
+
+
+       
+       
+                
